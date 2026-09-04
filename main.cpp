@@ -22,6 +22,8 @@
 #pragma comment(lib, "user32")
 
 const double frameTime = 1.0 / 60.0;
+GameState gameState;
+Renderer renderer;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
@@ -135,22 +137,55 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         PAINTSTRUCT ps;
         BeginPaint(hwnd, &ps);
 
-        renderer.on_wm_paint(
-            gameState.player_render,
-            gameState.walls,
-            gameState.shift,
-            gameState.x,
-            gameState.y,
-            gameState.render_distance,
-            gameState.current_chunk,
-            gameState.center_x,
-            gameState.center_y,
-            gameState.attack_time,
-            gameState.current_attack_frame,
-            gameState.attack_angle,
-            gameState.range,
-            gameState.cone_angle
-        );
+        renderer.render_begin();
+        if (gameState.state == "playing") {
+            renderer.render_walls(
+                gameState.walls,
+                gameState.shift,
+                gameState.player_x,
+                gameState.player_y,
+                gameState.render_distance,
+                gameState.current_chunk_i,
+                gameState.current_chunk_j
+            );
+            renderer.render_player(
+                gameState.player_render
+            );
+            renderer.render_projectiles(
+                gameState.shift,
+                gameState.player_x,
+                gameState.player_y,
+                gameState.projectiles,
+                gameState.render_distance,
+                gameState.current_chunk_i,
+                gameState.current_chunk_j,
+                gameState.max_chunks_i,
+                gameState.max_chunks_j
+            );
+            renderer.render_attack(
+                gameState.center_x,
+                gameState.center_y,
+                gameState.attack
+            );
+            renderer.render_taking_damage(
+                gameState.center_x,
+                gameState.center_y,
+                gameState.invulnerability_frame
+            );
+            renderer.render_stats(
+                gameState.player_stats->life,
+                gameState.player_stats->max_life,
+                gameState.attack
+            );
+        }
+        else if (gameState.state == "dead") {
+            renderer.render_dead(
+                gameState.center_x,
+                gameState.center_y
+            );
+        }
+        
+        renderer.render_end();
 
         EndPaint(hwnd, &ps);
 

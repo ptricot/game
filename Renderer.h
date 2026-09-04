@@ -6,9 +6,13 @@
 #include <dwrite.h>
 #include <vector>
 #include <string>
+#include <unordered_map>
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
+
+#include "GameData.h"
 
 class Renderer {
     public:
@@ -22,9 +26,13 @@ class Renderer {
         IWICFormatConverter *converter = nullptr;
         IDWriteFactory *pWriteFactory = nullptr;
         IDWriteTextFormat *pTextFormat = nullptr;
+        ID2D1SolidColorBrush* brush = nullptr;
+        Colors colors;
+        std::vector<float> blood_angles;
+        int blood_length;
 
         void init() {
-            // Direct2D factory
+            // Factories
             D2D1CreateFactory(
                 D2D1_FACTORY_TYPE_SINGLE_THREADED,
                 &pFactory
@@ -45,6 +53,14 @@ class Renderer {
                 L"",
                 &pTextFormat
             );
+
+            // Blood angles and length
+            blood_angles.reserve(20);
+            for (int i = 0; i < 20; i++) {
+                // 2 * pi * i / 20
+                blood_angles.push_back(6.28319f * i / 20);
+            }
+            blood_length = 15;
         }
 
         void load_image(const wchar_t* filename, ID2D1Bitmap** bitmap) {
@@ -96,6 +112,12 @@ class Renderer {
                 ),
                 &pRenderTarget
             );
+            
+            // Create brush
+            pRenderTarget->CreateSolidColorBrush(
+                colors.background,
+                &brush
+            );
 
             CoCreateInstance(
                 CLSID_WICImagingFactory,
@@ -121,42 +143,33 @@ class Renderer {
 
         }
 
-        void on_wm_paint(
-            const std::vector<int>& player_render,
+        void render_begin() {
+            pRenderTarget->BeginDraw();
+
+            // Background
+            pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+        }
+
+        void render_walls(
             const std::vector<std::vector<int>>& walls,
             const std::vector<int>& shift,
             const int x,
             const int y,
             const int render_distance,
-            const std::vector<int> current_chunk,
-            const int center_x,
-            const int center_y,
-            const int attack_time,
-            const int current_attack_frame,
-            const float attack_angle,
-            const int range,
-            const float cone_angle
+            const int current_chunk_i,
+            const int current_chunk_j
         ) {
-            pRenderTarget->BeginDraw();
-
-            // Background
-            pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-
             // Draw not walls
-            ID2D1SolidColorBrush* brush;
-            pRenderTarget->CreateSolidColorBrush(
-                D2D1::ColorF(D2D1::ColorF::White),
-                &brush
-            );
+            brush->SetColor(colors.ground);
 
             for (
-                int i = (std::max)(0, current_chunk[0]-render_distance);
-                i < (std::min)((int)walls.size(), current_chunk[0]+render_distance);
+                int i = (std::max)(0, current_chunk_i-render_distance);
+                i < (std::min)((int)walls.size(), current_chunk_i+render_distance);
                 i++
             ) {
                 for (
-                    int j = (std::max)(0, current_chunk[1]-render_distance);
-                    j < (std::min)((int)walls[i].size(), current_chunk[1]+render_distance);
+                    int j = (std::max)(0, current_chunk_j-render_distance);
+                    j < (std::min)((int)walls[i].size(), current_chunk_j+render_distance);
                     j++
                 ) {
                     int wall = walls[i][j];
@@ -186,8 +199,9 @@ class Renderer {
                     }
                 }
             }
+        }
 
-            // Draw player
+        void render_player(const std::vector<int>& player_render) {
             pRenderTarget->DrawBitmap(
                 pBitmap,
                 D2D1::RectF(
@@ -197,32 +211,103 @@ class Renderer {
                     player_render[2]
                 )
             );
+        }
+
+
+        void render_projectiles(
+            const std::vector<int>& shift,
+            const int x,
+            const int y,
+            std::unordered_map<int, std::vector<Projectile*>>& projectiles,
+            const int render_distance,
+            const int current_chunk_i,
+            const int current_chunk_j,
+            const int max_chunks_i,
+            const int max_chunks_j
+        ) {
+            for (
+                int i = (std::max)(0, current_chunk_i-render_distance);
+                i < (std::min)(max_chunks_i, current_chunk_i+render_distance);
+                i++
+            ) {
+                for (
+                    int j = (std::max)(0, current_chunk_j-render_distance);
+                    j < (std::min)(max_chunks_j, current_chunk_j+render_distance);
+                    j++
+                ) {
+                    const int key = i * max_chunks_j + j;
+                    if (projectiles.find(key) == projectiles.end()) continue;
+                    for (Projectile *proj : projectiles[key]) {
+
+                        if (proj->damage_type == 'F') brush->SetColor(colors.fire);
+                        if (proj->damage_type == 'C') brush->SetColor(colors.cold);
+                        if (proj->damage_type == 'P') brush->SetColor(colors.physical);
+                        pRenderTarget->FillEllipse(
+                            D2D1::Ellipse(
+                                D2D1::Point2F((int)proj->y + shift[1] - y, (int)proj->x + shift[0] - x),  // center
+                                proj->radius,
+                                proj->radius
+                            ),
+                            brush
+                        );
+                    }
+                }
+            }
+        }
+
+        void render_attack(
+            const int center_x,
+            const int center_y,
+            const Attack* attack
+        ) {
 
             // Draw attack
-            if (current_attack_frame >= 0 && current_attack_frame <= attack_time / 3) {
-                brush->SetColor(D2D1::ColorF(D2D1::ColorF::Green));
-
-                int attack_percentage = current_attack_frame * 300 / attack_time;
-                float angle = attack_angle + cone_angle * (attack_percentage - 50) / 100;
-                int xbeg = center_x + 60 * std::sin(angle);
-                int ybeg = center_y + 60 * std::cos(angle);
-                int xend = center_x + range * std::sin(angle);
-                int yend = center_y + range * std::cos(angle);
-                //std::cout << "Renderer draw attack at angle " << angle << '\n';
+            if (attack->attacking) {
+                brush->SetColor(colors.physical);
                 pRenderTarget->DrawLine(
-                    D2D1::Point2F(ybeg, xbeg),
-                    D2D1::Point2F(yend, xend),
+                    D2D1::Point2F(center_y + attack->ybeg, center_x + attack->xbeg),
+                    D2D1::Point2F(center_y + attack->yend, center_x + attack->xend),
                     brush,
                     5.0f
                 );
             }
+        }
 
+        void render_taking_damage(
+            const int center_x,
+            const int center_y,
+            const int invulnerability_frame
+        ) {
+            if (invulnerability_frame == -1) return;
+            // draw blood at dist from center
+            brush->SetColor(colors.blood);
+            int dist = 40 + 2 * invulnerability_frame;
+            for (float angle : blood_angles) {
+                int xbeg = center_x + dist * std::sin(angle);
+                int ybeg = center_y + dist * std::cos(angle);
+                int xend = center_x + (dist + blood_length) * std::sin(angle);
+                int yend = center_y + (dist + blood_length) * std::cos(angle);
+                pRenderTarget->DrawLine(
+                    D2D1::Point2F(ybeg, xbeg),
+                    D2D1::Point2F(yend, xend),
+                    brush,
+                    3.0f
+                );
+            }
+        }
+
+        void render_stats(
+            const int life,
+            const int max_life,
+            const Attack* attack
+        ) {
             // Show stats
-            brush->SetColor(D2D1::ColorF(D2D1::ColorF::Red));
+            brush->SetColor(colors.stats);
 
             std::wstring text =
-                L"x, y: " + std::to_wstring(x) + L", " + std::to_wstring(y) +
-                L"\nattack: " + std::to_wstring(current_attack_frame) + L" / " + std::to_wstring(attack_time);
+                L"\nlife: " + std::to_wstring(life) + L"/ " + std::to_wstring(max_life) +
+                L"\ncurrent frame: " + std::to_wstring(attack->current_frame) +
+                L"\nattacking: " + std::to_wstring(attack->attacking);
 
             D2D1_RECT_F textRect = D2D1::RectF(
                 10.0f, 10.0f,
@@ -236,9 +321,30 @@ class Renderer {
                 textRect,
                 brush
             );
+        }
 
-            brush->Release();
+        void render_dead(
+            const int center_x,
+            const int center_y
+        ) {
+            brush->SetColor(colors.stats);
+            std::wstring text = L"DEAD";
 
+            D2D1_RECT_F textRect = D2D1::RectF(
+                center_y - 30.0f, center_x - 5.0f,
+                center_y + 30.0f, center_x + 5.0f
+            );
+
+            pRenderTarget->DrawText(
+                text.c_str(),
+                static_cast<UINT32>(text.size()),
+                pTextFormat,
+                textRect,
+                brush
+            );
+        }
+
+        void render_end() {
             pRenderTarget->EndDraw();
         }
 
@@ -249,6 +355,7 @@ class Renderer {
             if (pFactory) pFactory->Release();
             if (pTextFormat) pTextFormat->Release();
             if (pWriteFactory) pWriteFactory->Release();
+            if (brush) brush->Release();
         }
 };
 

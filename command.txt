@@ -1,1 +1,0 @@
-cl /EHsc main.cpp GameState.cpp Renderer.cpp
