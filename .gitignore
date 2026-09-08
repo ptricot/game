@@ -2,6 +2,7 @@
 .vscode/
 Debug/
 Release/
+brouillons/
 *.obj
 *.exe
 *.pdb
