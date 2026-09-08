@@ -155,10 +155,9 @@ class Renderer {
 
         void render_walls(
             const std::vector<std::vector<int>>& walls,
-            const std::vector<int>& shift,
+            const RenderStats* render_stats,
             const int x,
             const int y,
-            const int render_distance,
             const int current_chunk_i,
             const int current_chunk_j,
             const int chunk_size
@@ -167,13 +166,13 @@ class Renderer {
             brush->SetColor(colors.ground);
 
             for (
-                int i = (std::max)(0, current_chunk_i-render_distance);
-                i < (std::min)((int)walls.size(), current_chunk_i+render_distance);
+                int i = (std::max)(0, current_chunk_i - render_stats->render_distance);
+                i < (std::min)((int)walls.size(), current_chunk_i + render_stats->render_distance);
                 i++
             ) {
                 for (
-                    int j = (std::max)(0, current_chunk_j-render_distance);
-                    j < (std::min)((int)walls[i].size(), current_chunk_j+render_distance);
+                    int j = (std::max)(0, current_chunk_j - render_stats->render_distance);
+                    j < (std::min)((int)walls[i].size(), current_chunk_j + render_stats->render_distance);
                     j++
                 ) {
                     int wall = walls[i][j];
@@ -181,10 +180,10 @@ class Renderer {
                     if (wall == 0 || wall == 2) {
                         pRenderTarget->FillRectangle(
                             D2D1::RectF(
-                                chunk_size * j + shift[1] - y,  // ymin
-                                chunk_size * i + shift[0] - x,  // xmin
-                                chunk_size * (j + 1) + shift[1] - y,   // ymax
-                                chunk_size * (i + 1) + shift[0] - x  // xmax
+                                chunk_size * j + render_stats->shift[1] - y,  // ymin
+                                chunk_size * i + render_stats->shift[0] - x,  // xmin
+                                chunk_size * (j + 1) + render_stats->shift[1] - y,   // ymax
+                                chunk_size * (i + 1) + render_stats->shift[0] - x  // xmax
                             ),
                             brush
                         );
@@ -194,10 +193,10 @@ class Renderer {
                         pRenderTarget->DrawBitmap(
                             portalBitmap,
                             D2D1::RectF(
-                                chunk_size * j + shift[1] - y,  // ymin
-                                chunk_size * i + shift[0] - x,  // xmin
-                                chunk_size * (j + 1) + shift[1] - y,   // ymax
-                                chunk_size * (i + 1) + shift[0] - x  // xmax
+                                chunk_size * j + render_stats->shift[1] - y,  // ymin
+                                chunk_size * i + render_stats->shift[0] - x,  // xmin
+                                chunk_size * (j + 1) + render_stats->shift[1] - y,   // ymax
+                                chunk_size * (i + 1) + render_stats->shift[0] - x  // xmax
                             )
                         );
                     }
@@ -206,10 +205,10 @@ class Renderer {
                         pRenderTarget->DrawBitmap(
                             enemyBitmap,
                             D2D1::RectF(
-                                chunk_size * j + shift[1] - y,  // ymin
-                                chunk_size * i + shift[0] - x,  // xmin
-                                chunk_size * (j + 1) + shift[1] - y,   // ymax
-                                chunk_size * (i + 1) + shift[0] - x  // xmax
+                                chunk_size * j + render_stats->shift[1] - y,  // ymin
+                                chunk_size * i + render_stats->shift[0] - x,  // xmin
+                                chunk_size * (j + 1) + render_stats->shift[1] - y,   // ymax
+                                chunk_size * (i + 1) + render_stats->shift[0] - x  // xmax
                             )
                         );
                     }
@@ -217,20 +216,22 @@ class Renderer {
             }
         }
 
-        void render_player(const std::vector<int>& player_render) {
+        void render_player(
+            const RenderStats* render_stats
+        ) {
             pRenderTarget->DrawBitmap(
                 playerBitmap,
                 D2D1::RectF(
-                    player_render[1],
-                    player_render[0],
-                    player_render[3],
-                    player_render[2]
+                    render_stats->player_render[1],
+                    render_stats->player_render[0],
+                    render_stats->player_render[3],
+                    render_stats->player_render[2]
                 )
             );
         }
 
         void render_boss(
-            const std::vector<int>& shift,
+            const RenderStats* render_stats,
             const int x,
             const int y,
             const Boss *boss
@@ -241,10 +242,10 @@ class Renderer {
             pRenderTarget->DrawBitmap(
                 bossBitmap,
                 D2D1::RectF(
-                    boss->y - boss->half_width + shift[1] - y,
-                    boss->x - boss->half_height + shift[0] - x,
-                    boss->y + boss->half_width + shift[1] - y,
-                    boss->x + boss->half_height + shift[0] - x
+                    boss->y - boss->half_width + render_stats->shift[1] - y,
+                    boss->x - boss->half_height + render_stats->shift[0] - x,
+                    boss->y + boss->half_width + render_stats->shift[1] - y,
+                    boss->x + boss->half_height + render_stats->shift[0] - x
                 )
             );
 
@@ -253,10 +254,10 @@ class Renderer {
                 brush->SetColor(colors.background);
 
                 D2D1_RECT_F textRect = D2D1::RectF(
-                    boss->y + shift[1] - y,
-                    boss->x - 20.0f - boss->half_height + shift[0] - x,
-                    boss->y + 200.0f + shift[1] - y,
-                    boss->x - boss->half_height + shift[0] - x
+                    boss->y + render_stats->shift[1] - y,
+                    boss->x - 20.0f - boss->half_height + render_stats->shift[0] - x,
+                    boss->y + 200.0f + render_stats->shift[1] - y,
+                    boss->x - boss->half_height + render_stats->shift[0] - x
                 );
 
                 pRenderTarget->DrawText(
@@ -270,24 +271,23 @@ class Renderer {
         }
 
         void render_projectiles(
-            const std::vector<int>& shift,
+            const RenderStats* render_stats,
             const int x,
             const int y,
             std::unordered_map<int, std::vector<Projectile*>>& projectiles,
-            const int render_distance,
             const int current_chunk_i,
             const int current_chunk_j,
             const int max_chunks_i,
             const int max_chunks_j
         ) {
             for (
-                int i = (std::max)(0, current_chunk_i-render_distance);
-                i < (std::min)(max_chunks_i, current_chunk_i+render_distance);
+                int i = (std::max)(0, current_chunk_i - render_stats->render_distance);
+                i < (std::min)(max_chunks_i, current_chunk_i + render_stats->render_distance);
                 i++
             ) {
                 for (
-                    int j = (std::max)(0, current_chunk_j-render_distance);
-                    j < (std::min)(max_chunks_j, current_chunk_j+render_distance);
+                    int j = (std::max)(0, current_chunk_j - render_stats->render_distance);
+                    j < (std::min)(max_chunks_j, current_chunk_j + render_stats->render_distance);
                     j++
                 ) {
                     const int key = i * max_chunks_j + j;
@@ -299,7 +299,7 @@ class Renderer {
                         if (proj->damage_type == 'P') brush->SetColor(colors.physical);
                         pRenderTarget->FillEllipse(
                             D2D1::Ellipse(
-                                D2D1::Point2F((int)proj->y + shift[1] - y, (int)proj->x + shift[0] - x),  // center
+                                D2D1::Point2F((int)proj->y + render_stats->shift[1] - y, (int)proj->x + render_stats->shift[0] - x),  // center
                                 proj->radius,
                                 proj->radius
                             ),
@@ -311,8 +311,7 @@ class Renderer {
         }
 
         void render_attack(
-            const int center_x,
-            const int center_y,
+            const RenderStats* render_stats,
             const Attack* attack
         ) {
 
@@ -320,8 +319,8 @@ class Renderer {
             if (attack->attacking) {
                 brush->SetColor(colors.physical);
                 pRenderTarget->DrawLine(
-                    D2D1::Point2F(center_y + attack->ybeg, center_x + attack->xbeg),
-                    D2D1::Point2F(center_y + attack->yend, center_x + attack->xend),
+                    D2D1::Point2F(render_stats->center_y + attack->ybeg, render_stats->center_x + attack->xbeg),
+                    D2D1::Point2F(render_stats->center_y + attack->yend, render_stats->center_x + attack->xend),
                     brush,
                     5.0f
                 );
@@ -329,8 +328,7 @@ class Renderer {
         }
 
         void render_taking_damage(
-            const int center_x,
-            const int center_y,
+            const RenderStats* render_stats,
             const int invulnerability_frame
         ) {
             if (invulnerability_frame == -1) return;
@@ -338,10 +336,10 @@ class Renderer {
             brush->SetColor(colors.blood);
             int dist = 20 + 2 * invulnerability_frame;
             for (float angle : blood_angles) {
-                int xbeg = center_x + dist * std::sin(angle);
-                int ybeg = center_y + dist * std::cos(angle);
-                int xend = center_x + (dist + blood_length) * std::sin(angle);
-                int yend = center_y + (dist + blood_length) * std::cos(angle);
+                int xbeg = render_stats->center_x + dist * std::sin(angle);
+                int ybeg = render_stats->center_y + dist * std::cos(angle);
+                int xend = render_stats->center_x + (dist + blood_length) * std::sin(angle);
+                int yend = render_stats->center_y + (dist + blood_length) * std::cos(angle);
                 pRenderTarget->DrawLine(
                     D2D1::Point2F(ybeg, xbeg),
                     D2D1::Point2F(yend, xend),
@@ -351,20 +349,51 @@ class Renderer {
             }
         }
 
+        void render_boss_life(
+            const RenderStats* render_stats,
+            const Boss *boss
+        ) {
+            if (!boss) return;
+
+            // outline
+            brush->SetColor(colors.boss_life_outline);
+            pRenderTarget->DrawRectangle(
+                D2D1::RectF(
+                    render_stats->boss_life_bar_ymin,
+                    20.0f,
+                    render_stats->boss_life_bar_ymax,
+                    40.0f
+                ),
+                brush,
+                3.0f
+            );
+
+            // fill
+            brush->SetColor(colors.boss_life_fill);
+            float life_ratio =  boss->life * 1.0f / boss->max_life;
+            int ymax = render_stats->boss_life_bar_ymin + life_ratio *
+                (render_stats->boss_life_bar_ymax - render_stats->boss_life_bar_ymin);
+            pRenderTarget->FillRectangle(
+                D2D1::RectF(
+                    render_stats->boss_life_bar_ymin + 2,
+                    22.0f,
+                    ymax - 2,
+                    38.0f
+                ),
+                brush
+            );
+
+        }
+
         void render_stats(
             const int life,
-            const int max_life,
-            const Boss *boss
+            const int max_life
         ) {
             // Show stats
             brush->SetColor(colors.stats);
 
             std::wstring text =
                 L"\nlife: " + std::to_wstring(life) + L"/ " + std::to_wstring(max_life);
-
-            if (boss) {
-                text += L"\nboss life: " + std::to_wstring(boss->life) + L"/ " + std::to_wstring(boss->max_life);
-            }
 
             D2D1_RECT_F textRect = D2D1::RectF(
                 10.0f, 10.0f,
@@ -381,15 +410,14 @@ class Renderer {
         }
 
         void render_dead(
-            const int center_x,
-            const int center_y
+            const RenderStats* render_stats
         ) {
             brush->SetColor(colors.stats);
             std::wstring text = L"DEAD";
 
             D2D1_RECT_F textRect = D2D1::RectF(
-                center_y - 30.0f, center_x - 5.0f,
-                center_y + 30.0f, center_x + 5.0f
+                render_stats->center_y - 30.0f, render_stats->center_x - 5.0f,
+                render_stats->center_y + 30.0f, render_stats->center_x + 5.0f
             );
 
             pRenderTarget->DrawText(

@@ -84,10 +84,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     // Run the message loop.
 
     MSG msg = { };
+    double accumulator = 0.0;
+
+    auto previous = std::chrono::steady_clock::now();
+
     while (true)
     {
-        auto start = std::chrono::steady_clock::now();
-
+        // Process Windows messages
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
@@ -97,22 +100,30 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             DispatchMessage(&msg);
         }
 
-        // Update
-        POINT p;
-        GetCursorPos(&p);
-        ScreenToClient(hwnd, &p);
-        gameState.run_frame(p.y, p.x);
+        // Measure elapsed real time
+        auto current = std::chrono::steady_clock::now();
+        double dt = std::chrono::duration<double>(current - previous).count();
+        previous = current;
+
+        accumulator += dt;
+
+        // Update at a fixed 60 FPS
+        while (accumulator >= frameTime)
+        {
+            POINT p;
+            GetCursorPos(&p);
+            ScreenToClient(hwnd, &p);
+
+            gameState.run_frame(p.y, p.x);
+
+            accumulator -= frameTime;
+        }
 
         // Draw
         InvalidateRect(hwnd, nullptr, FALSE);
 
-        auto elapsed = std::chrono::steady_clock::now() - start;
-        std::chrono::duration<double> elapsedSeconds = elapsed;
-
-        if (elapsedSeconds.count() < frameTime)
-            std::this_thread::sleep_for(
-                std::chrono::duration<double>(frameTime - elapsedSeconds.count())
-            );
+        // Avoid using 100% CPU
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     return 0;
@@ -142,54 +153,52 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         if (gameState.state != "dead") {
             renderer.render_walls(
                 gameState.walls,
-                gameState.shift,
+                gameState.render_stats,
                 gameState.player_x,
                 gameState.player_y,
-                gameState.render_distance,
                 gameState.current_chunk_i,
                 gameState.current_chunk_j,
                 gameState.chunk_size
             );
             renderer.render_player(
-                gameState.player_render
+                gameState.render_stats
             );
             renderer.render_boss(
-                gameState.shift,
+                gameState.render_stats,
                 gameState.player_x,
                 gameState.player_y,
                 gameState.boss
             );
             renderer.render_projectiles(
-                gameState.shift,
+                gameState.render_stats,
                 gameState.player_x,
                 gameState.player_y,
                 gameState.projectiles,
-                gameState.render_distance,
                 gameState.current_chunk_i,
                 gameState.current_chunk_j,
                 gameState.max_chunks_i,
                 gameState.max_chunks_j
             );
             renderer.render_attack(
-                gameState.center_x,
-                gameState.center_y,
+                gameState.render_stats,
                 gameState.attack
             );
             renderer.render_taking_damage(
-                gameState.center_x,
-                gameState.center_y,
+                gameState.render_stats,
                 gameState.invulnerability_frame
+            );
+            renderer.render_boss_life(
+                gameState.render_stats,
+                gameState.boss
             );
             renderer.render_stats(
                 gameState.player_stats->life,
-                gameState.player_stats->max_life,
-                gameState.boss
+                gameState.player_stats->max_life
             );
         }
         else if (gameState.state == "dead") {
             renderer.render_dead(
-                gameState.center_x,
-                gameState.center_y
+                gameState.render_stats
             );
         }
         

@@ -20,7 +20,7 @@ class Projectile {
             float y,
             float angle,
             int radius = 10,
-            float speed = 4.0f,
+            float speed = 2.0f,
             char damage_type = 'F',
             std::function<float(float, int)> acceleration_x = [](float dx, int frame){return 0.0f;},
             std::function<float(float, int)> acceleration_y = [](float dx, int frame){return 0.0f;}

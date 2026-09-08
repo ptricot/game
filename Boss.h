@@ -29,22 +29,22 @@ class Boss {
         int event_frame = 0;
         std::wstring dialogue = L"Greetings";
         std::vector<BossEvent> pattern = {
-            {70, "wait"},
-            {10, "attack player"},
-            {10, "attack player"},
-            {10, "attack player"},
-            {10, "attack player"},
-            {50, "attack player"},
-            {50, "rain", 8, L"Rain", {
+            {140, "wait"},
+            {20, "attack player"},
+            {20, "attack player"},
+            {20, "attack player"},
+            {20, "attack player"},
+            {80, "attack player"},
+            {80, "rain", 8, L"Rain", {
                 100.0f, 200.0f, 300.0f, 400.0f, 500.0f, 600.0f, 700.0f, 800.0f, 900.0f
             }},
-            {70, "wait"},
-            {10, "attack player"},
-            {10, "attack player"},
-            {10, "attack player"},
-            {10, "attack player"},
-            {50, "attack player"},
-            {10, "attack angles", 10, L"", {
+            {100, "wait"},
+            {20, "attack player"},
+            {20, "attack player"},
+            {20, "attack player"},
+            {20, "attack player"},
+            {80, "attack player"},
+            {20, "attack angles", 10, L"", {
                 0.0f,
                 6.28319f / 8,
                 6.28319f / 4,
@@ -54,8 +54,8 @@ class Boss {
                 6.28319f * 3 / 4,
                 6.28319f * 7 / 8
             }},
-            {50, "wait", 0, L"Big attack"},
-            {30, "attack player", 15, L"", {0.3f, -0.3f}}
+            {80, "wait", 0, L"Big attack"},
+            {50, "attack player", 15, L"", {0.3f, -0.3f}}
         };
         BossEvent *event = &pattern[event_number];
         Boss(int x, int y, int half_width = 50, int half_height = 60, int life = 1000) :
@@ -115,10 +115,10 @@ class Boss {
                         start_y,
                         6.28319f / 4,        // pi / 2, down
                         event->radius,
-                        4.0f,
+                        2.0f,
                         'F',
                         [](float dx, int frame){return 0.0f;},
-                        [](float dy, int frame){return 0.3f * std::cos(frame / 10.0f);}       // wiggle effect
+                        [](float dy, int frame){return 0.1f * std::cos(frame / 20.0f);}       // wiggle effect
                     ));
                 }
                 return res;

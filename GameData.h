@@ -4,8 +4,34 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <d2d1.h>
 
+struct RenderStats {
+    int half_player_width; // in pixels
+    int half_player_height; // in pixels
+    int render_distance; // how many chunks to render in each direction
+    std::vector<int> player_render;
+    int center_x; // pixel position of center of screen
+    int center_y;
+    int boss_life_bar_ymin;
+    int boss_life_bar_ymax;
+    std::vector<int> shift;
+    RenderStats(
+        const std::vector<int>& arg_player_render,
+        const std::vector<int>& arg_shift,
+        int chunk_size
+    ) :
+        half_player_width(chunk_size / 2),
+        half_player_height(chunk_size / 2),
+        player_render(arg_player_render),
+        center_x((player_render[0] + player_render[2]) / 2),
+        center_y((player_render[1] + player_render[3]) / 2),
+        shift(arg_shift),
+        boss_life_bar_ymin(center_y - 2 * arg_shift[1] / 3),
+        boss_life_bar_ymax(center_y + 2 * arg_shift[1] / 3),
+        render_distance((std::max)(arg_shift[0], arg_shift[1]) / chunk_size + 2) {}
+};
 
 struct PlayerStats {
     int life;
@@ -16,7 +42,7 @@ struct PlayerStats {
     int hit_damage;
     int invulnerability_time = 20;
     float cone_angle;
-    PlayerStats(int max_life = 3, int speed = 4, int range = 150, int attack_time = 50, int hit_damage = 5, float cone_angle = 1.2f) :
+    PlayerStats(int max_life = 3, int speed = 2, int range = 150, int attack_time = 80, int hit_damage = 5, float cone_angle = 1.2f) :
         life(max_life), max_life(max_life), speed(speed), range(range), attack_time(attack_time), hit_damage(hit_damage), cone_angle(cone_angle) {}
 };
 
@@ -36,7 +62,9 @@ struct Colors {
     const D2D1::ColorF ground{1.0f, 1.0f, 1.0f};
     const D2D1::ColorF fire{200.0f / 255, 20.0f / 255, 20.0f / 255};
     const D2D1::ColorF cold{20.0f / 255, 20.0f / 255, 200.0f / 255};
-    const D2D1::ColorF physical{20.0f / 255, 200.0f / 255, 20.0f / 255};
+    const D2D1::ColorF physical{20.0f / 255, 120.0f / 255, 20.0f / 255};
     const D2D1::ColorF blood{80.0f / 255, 20.0f / 255, 20.0f / 255};
     const D2D1::ColorF stats{240.0f / 255, 0.0f, 0.0f};
+    const D2D1::ColorF boss_life_outline{50.0f / 255, 10.0f / 255, 10.0f / 255};
+    const D2D1::ColorF boss_life_fill{120.0f / 255, 45.0f / 255, 30.0f / 255};
 };

@@ -24,12 +24,7 @@ class GameState {
         bool left;
         bool right;
         bool lbutton;
-        int half_player_width; // in pixels
-        int half_player_height; // in pixels
         int hitbox_radius;
-        int render_distance; // how many chunks to render in each direction
-        int center_x; // pixel position of center of screen
-        int center_y;
         int invulnerability_frame; // current invulnerability frame
         int invulnerability_time; // Number of frames for invilnerability
         int max_chunks_i; // how many chunks vertical in level
@@ -40,10 +35,9 @@ class GameState {
         int enemy_range;
         bool invulnerable = false; // FOR DEVELOPPMENT ONLY
         PlayerStats* player_stats;
+        RenderStats* render_stats;
         Attack* attack;
         std::string state;
-        std::vector<int> player_render; // where to render the player on screen
-        std::vector<int> shift; // shift between game pixels and render pixels
         Level* level;
         int level_number;
         std::vector<std::vector<int>> walls;
@@ -55,21 +49,19 @@ class GameState {
 
             // render variables
             chunk_size = 50;
-            half_player_width = chunk_size / 2;
-            half_player_height = chunk_size / 2;
-            hitbox_radius = chunk_size * 0.4f;
-            player_render = arg_player_render;
-            center_x = (player_render[0] + player_render[2]) / 2;
-            center_y = (player_render[1] + player_render[3]) / 2;
-            shift = arg_shift;
-            render_distance = (std::max)(arg_shift[0], arg_shift[1]) / chunk_size + 2;
+            hitbox_radius = 20;
+            render_stats =  new RenderStats(
+                arg_player_render,
+                arg_shift,
+                chunk_size
+            );
 
             // level
             level_number = 0;
             level = &Levels[level_number];
             load_level();
 
-            enemy_range = 6;
+            enemy_range = 6; // in chunks
 
             // player stats
             player_stats = new PlayerStats();
@@ -131,6 +123,7 @@ class GameState {
             clear_enemies();
             clear_projectiles();
             delete player_stats;
+            delete render_stats;
             delete attack;
             delete level;
         }
@@ -199,41 +192,65 @@ class GameState {
             const int j = new_y / chunk_size;
             // Check adjacent chunks and snap position
             // left
-            if (is_wall(i, j-1) == 1 && new_y % chunk_size < half_player_width) {
-                new_y = chunk_size * j + half_player_width;
+            if (is_wall(i, j-1) == 1 && new_y % chunk_size < render_stats->half_player_width) {
+                new_y = chunk_size * j + render_stats->half_player_width;
             }
             // right
-            if (is_wall(i, j+1) == 1 && new_y % chunk_size > (chunk_size - half_player_width)) {
-                new_y = chunk_size * (j+1) - half_player_width;
+            if (is_wall(i, j+1) == 1 && new_y % chunk_size > (chunk_size - render_stats->half_player_width)) {
+                new_y = chunk_size * (j+1) - render_stats->half_player_width;
             }
             // up
-            if (is_wall(i-1, j) == 1 && new_x % chunk_size < half_player_height) {
-                new_x = chunk_size * i + half_player_height;
+            if (is_wall(i-1, j) == 1 && new_x % chunk_size < render_stats->half_player_height) {
+                new_x = chunk_size * i + render_stats->half_player_height;
             }
             // down
-            if (is_wall(i+1, j) == 1 && new_x % chunk_size > (chunk_size - half_player_height)) {
-                new_x = chunk_size * (i+1) - half_player_height;
+            if (is_wall(i+1, j) == 1 && new_x % chunk_size > (chunk_size - render_stats->half_player_height)) {
+                new_x = chunk_size * (i+1) - render_stats->half_player_height;
             }
             // up left
-            if (is_wall(i-1, j-1) == 1 && new_y % chunk_size < half_player_width && new_x % chunk_size < half_player_height) {
+            if (
+                is_wall(i-1, j-1) == 1 &&
+                new_y % chunk_size < render_stats->half_player_width &&
+                new_x % chunk_size < render_stats->half_player_height
+            ) {
                 // Only do smaller snap
-                if (half_player_width - new_y % chunk_size < half_player_height - new_x % chunk_size) new_y = chunk_size * j + half_player_width;
-                else new_x = chunk_size * i + half_player_height;
+                if (render_stats->half_player_width - new_y % chunk_size < render_stats->half_player_height - new_x % chunk_size) {
+                    new_y = chunk_size * j + render_stats->half_player_width;
+                }
+                else new_x = chunk_size * i + render_stats->half_player_height;
             }
             // up right
-            if (is_wall(i-1, j+1) == 1 && new_y % chunk_size > (chunk_size - half_player_width) && new_x % chunk_size < half_player_height) {
-                if (new_y % chunk_size - chunk_size + half_player_width < half_player_height - new_x % chunk_size) new_y = chunk_size * (j+1) - half_player_width;
-                else new_x = chunk_size * i + half_player_height;
+            if (
+                is_wall(i-1, j+1) == 1 &&
+                new_y % chunk_size > (chunk_size - render_stats->half_player_width) &&
+                new_x % chunk_size < render_stats->half_player_height
+            ) {
+                if (new_y % chunk_size - chunk_size + render_stats->half_player_width < render_stats->half_player_height - new_x % chunk_size) {
+                    new_y = chunk_size * (j+1) - render_stats->half_player_width;
+                }
+                else new_x = chunk_size * i + render_stats->half_player_height;
             }
             // down right
-            if (is_wall(i+1, j+1) == 1 && new_y % chunk_size > (chunk_size - half_player_width) && new_x % chunk_size > (chunk_size - half_player_height)) {
-                if (new_y % chunk_size - chunk_size + half_player_width < new_x % chunk_size - chunk_size + half_player_height) new_y = chunk_size * (j+1) - half_player_width;
-                else new_x = chunk_size * (i+1) - half_player_height;
+            if (
+                is_wall(i+1, j+1) == 1 &&
+                new_y % chunk_size > (chunk_size - render_stats->half_player_width) &&
+                new_x % chunk_size > (chunk_size - render_stats->half_player_height)
+            ) {
+                if (new_y % chunk_size - chunk_size + render_stats->half_player_width < new_x % chunk_size - chunk_size + render_stats->half_player_height) {
+                    new_y = chunk_size * (j+1) - render_stats->half_player_width;
+                }
+                else new_x = chunk_size * (i+1) - render_stats->half_player_height;
             }
             // down left
-            if (is_wall(i+1, j-1) == 1 && new_y % chunk_size < half_player_width && new_x % chunk_size > (chunk_size - half_player_height)) {
-                if (half_player_width - new_y % chunk_size < new_x % chunk_size - chunk_size + half_player_height) new_y = chunk_size * j + half_player_width;
-                else new_x = chunk_size * (i+1) - half_player_height;
+            if (
+                is_wall(i+1, j-1) == 1 &&
+                new_y % chunk_size < render_stats->half_player_width &&
+                new_x % chunk_size > (chunk_size - render_stats->half_player_height)
+            ) {
+                if (render_stats->half_player_width - new_y % chunk_size < new_x % chunk_size - chunk_size + render_stats->half_player_height) {
+                    new_y = chunk_size * j + render_stats->half_player_width;
+                }
+                else new_x = chunk_size * (i+1) - render_stats->half_player_height;
             }
             
             // update position
@@ -257,8 +274,8 @@ class GameState {
             attack->run_frame();
 
             // Check for new attack
-            if (attack->available() && lbutton && (cx != center_x || cy != center_y)) {
-                float angle = std::atan2(cx - center_x, cy - center_y);
+            if (attack->available() && lbutton && (cx != render_stats->center_x || cy != render_stats->center_y)) {
+                float angle = std::atan2(cx - render_stats->center_x, cy - render_stats->center_y);
                 attack->start(angle);
             }
 
