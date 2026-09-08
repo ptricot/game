@@ -24,6 +24,7 @@
 const double frameTime = 1.0 / 60.0;
 GameState gameState;
 Renderer renderer;
+HCURSOR cursor = LoadCursorFromFile(L"assets/cursor.cur");
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
@@ -138,7 +139,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         BeginPaint(hwnd, &ps);
 
         renderer.render_begin();
-        if (gameState.state == "playing") {
+        if (gameState.state != "dead") {
             renderer.render_walls(
                 gameState.walls,
                 gameState.shift,
@@ -146,10 +147,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 gameState.player_y,
                 gameState.render_distance,
                 gameState.current_chunk_i,
-                gameState.current_chunk_j
+                gameState.current_chunk_j,
+                gameState.chunk_size
             );
             renderer.render_player(
                 gameState.player_render
+            );
+            renderer.render_boss(
+                gameState.shift,
+                gameState.player_x,
+                gameState.player_y,
+                gameState.boss
             );
             renderer.render_projectiles(
                 gameState.shift,
@@ -175,7 +183,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             renderer.render_stats(
                 gameState.player_stats->life,
                 gameState.player_stats->max_life,
-                gameState.attack
+                gameState.boss
             );
         }
         else if (gameState.state == "dead") {
@@ -207,6 +215,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
     case WM_LBUTTONUP: {
         gameState.on_lbuttonup();
+        return 0;
+    }
+
+    case WM_SETCURSOR: {
+        SetCursor(cursor);
         return 0;
     }
 

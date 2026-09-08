@@ -10,7 +10,6 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 #include "GameData.h"
 
@@ -18,8 +17,10 @@ class Renderer {
     public:
         ID2D1Factory *pFactory = nullptr;
         ID2D1HwndRenderTarget *pRenderTarget = nullptr;
-        ID2D1Bitmap *pBitmap = nullptr;
-        ID2D1Bitmap *eBitmap = nullptr;
+        ID2D1Bitmap *playerBitmap = nullptr;
+        ID2D1Bitmap *enemyBitmap = nullptr;
+        ID2D1Bitmap *portalBitmap = nullptr;
+        ID2D1Bitmap *bossBitmap = nullptr;
         IWICBitmapDecoder *decoder = nullptr;
         IWICImagingFactory *wicFactory = nullptr;
         IWICBitmapFrameDecode *frame = nullptr;
@@ -127,12 +128,14 @@ class Renderer {
             );
 
             // Load PNG
-            load_image(L"assets/main_character.png", &pBitmap);
-            load_image(L"assets/enemy1.png", &eBitmap);
+            load_image(L"assets/main_character.png", &playerBitmap);
+            load_image(L"assets/enemy1.png", &enemyBitmap);
+            load_image(L"assets/portal.png", &portalBitmap);
+            load_image(L"assets/boss.png", &bossBitmap);
 
             // Initialize game state
             D2D1_SIZE_F size = pRenderTarget->GetSize();
-            D2D1_SIZE_F imageSize = pBitmap->GetSize();
+            D2D1_SIZE_F imageSize = playerBitmap->GetSize();
 
             int y = (size.width - imageSize.width) / 2;
             int x = (size.height - imageSize.height) / 2;
@@ -147,7 +150,7 @@ class Renderer {
             pRenderTarget->BeginDraw();
 
             // Background
-            pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+            pRenderTarget->Clear(colors.background);
         }
 
         void render_walls(
@@ -157,7 +160,8 @@ class Renderer {
             const int y,
             const int render_distance,
             const int current_chunk_i,
-            const int current_chunk_j
+            const int current_chunk_j,
+            const int chunk_size
         ) {
             // Draw not walls
             brush->SetColor(colors.ground);
@@ -174,26 +178,38 @@ class Renderer {
                 ) {
                     int wall = walls[i][j];
                     // ground
-                    if (wall == 0 || wall == 2 || wall == 3) {
+                    if (wall == 0 || wall == 2) {
                         pRenderTarget->FillRectangle(
                             D2D1::RectF(
-                                100 * j + shift[1] - y,  // ymin
-                                100 * i + shift[0] - x,  // xmin
-                                100 * (j + 1) + shift[1] - y,   // ymax
-                                100 * (i + 1) + shift[0] - x  // xmax
+                                chunk_size * j + shift[1] - y,  // ymin
+                                chunk_size * i + shift[0] - x,  // xmin
+                                chunk_size * (j + 1) + shift[1] - y,   // ymax
+                                chunk_size * (i + 1) + shift[0] - x  // xmax
                             ),
                             brush
+                        );
+                    }
+                    // portal
+                    else if (wall == 3) {
+                        pRenderTarget->DrawBitmap(
+                            portalBitmap,
+                            D2D1::RectF(
+                                chunk_size * j + shift[1] - y,  // ymin
+                                chunk_size * i + shift[0] - x,  // xmin
+                                chunk_size * (j + 1) + shift[1] - y,   // ymax
+                                chunk_size * (i + 1) + shift[0] - x  // xmax
+                            )
                         );
                     }
                     // enemy
                     else if (wall == 4) {
                         pRenderTarget->DrawBitmap(
-                            eBitmap,
+                            enemyBitmap,
                             D2D1::RectF(
-                                100 * j + shift[1] - y,  // ymin
-                                100 * i + shift[0] - x,  // xmin
-                                100 * (j + 1) + shift[1] - y,   // ymax
-                                100 * (i + 1) + shift[0] - x  // xmax
+                                chunk_size * j + shift[1] - y,  // ymin
+                                chunk_size * i + shift[0] - x,  // xmin
+                                chunk_size * (j + 1) + shift[1] - y,   // ymax
+                                chunk_size * (i + 1) + shift[0] - x  // xmax
                             )
                         );
                     }
@@ -203,7 +219,7 @@ class Renderer {
 
         void render_player(const std::vector<int>& player_render) {
             pRenderTarget->DrawBitmap(
-                pBitmap,
+                playerBitmap,
                 D2D1::RectF(
                     player_render[1],
                     player_render[0],
@@ -213,6 +229,45 @@ class Renderer {
             );
         }
 
+        void render_boss(
+            const std::vector<int>& shift,
+            const int x,
+            const int y,
+            const Boss *boss
+        ) {
+            if (!boss) return;
+            
+            // Draw boss
+            pRenderTarget->DrawBitmap(
+                bossBitmap,
+                D2D1::RectF(
+                    boss->y - boss->half_width + shift[1] - y,
+                    boss->x - boss->half_height + shift[0] - x,
+                    boss->y + boss->half_width + shift[1] - y,
+                    boss->x + boss->half_height + shift[0] - x
+                )
+            );
+
+            // Draw dialogue
+            if (boss->dialogue.size()) {
+                brush->SetColor(colors.background);
+
+                D2D1_RECT_F textRect = D2D1::RectF(
+                    boss->y + shift[1] - y,
+                    boss->x - 20.0f - boss->half_height + shift[0] - x,
+                    boss->y + 200.0f + shift[1] - y,
+                    boss->x - boss->half_height + shift[0] - x
+                );
+
+                pRenderTarget->DrawText(
+                    boss->dialogue.c_str(),
+                    static_cast<UINT32>(boss->dialogue.size()),
+                    pTextFormat,
+                    textRect,
+                    brush
+                );
+            }
+        }
 
         void render_projectiles(
             const std::vector<int>& shift,
@@ -281,7 +336,7 @@ class Renderer {
             if (invulnerability_frame == -1) return;
             // draw blood at dist from center
             brush->SetColor(colors.blood);
-            int dist = 40 + 2 * invulnerability_frame;
+            int dist = 20 + 2 * invulnerability_frame;
             for (float angle : blood_angles) {
                 int xbeg = center_x + dist * std::sin(angle);
                 int ybeg = center_y + dist * std::cos(angle);
@@ -299,15 +354,17 @@ class Renderer {
         void render_stats(
             const int life,
             const int max_life,
-            const Attack* attack
+            const Boss *boss
         ) {
             // Show stats
             brush->SetColor(colors.stats);
 
             std::wstring text =
-                L"\nlife: " + std::to_wstring(life) + L"/ " + std::to_wstring(max_life) +
-                L"\ncurrent frame: " + std::to_wstring(attack->current_frame) +
-                L"\nattacking: " + std::to_wstring(attack->attacking);
+                L"\nlife: " + std::to_wstring(life) + L"/ " + std::to_wstring(max_life);
+
+            if (boss) {
+                text += L"\nboss life: " + std::to_wstring(boss->life) + L"/ " + std::to_wstring(boss->max_life);
+            }
 
             D2D1_RECT_F textRect = D2D1::RectF(
                 10.0f, 10.0f,
@@ -349,8 +406,8 @@ class Renderer {
         }
 
         void on_wm_destroy() {
-            if (pBitmap) pBitmap->Release();
-            if (eBitmap) eBitmap->Release();
+            if (playerBitmap) playerBitmap->Release();
+            if (enemyBitmap) enemyBitmap->Release();
             if (pRenderTarget) pRenderTarget->Release();
             if (pFactory) pFactory->Release();
             if (pTextFormat) pTextFormat->Release();
