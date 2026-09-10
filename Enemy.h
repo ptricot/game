@@ -13,6 +13,7 @@ class Enemy {
         int max_life;
         int attack_time = 100;
         int current_attack_frame = -1;
+        int experience = 1;
         Enemy(int i, int j, int life = 10) : chunk_i(i), chunk_j(j), life(life), max_life(life) {}
 
     bool take_damage(int damage) {

@@ -8,17 +8,21 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <typeinfo>
 
 #include "GameData.h"
 #include "Projectile.h"
 #include "Enemy.h"
 #include "Attack.h"
 #include "Boss.h"
+#include "PlayerStats.h"
 
 class GameState {
     public:
         int player_x;
         int player_y;
+        int pointer_x;
+        int pointer_y;
         bool up;
         bool down;
         bool left;
@@ -33,15 +37,18 @@ class GameState {
         int current_chunk_j;
         int chunk_size; // in pixels
         int enemy_range;
-        bool invulnerable = false; // FOR DEVELOPPMENT ONLY
+        bool pause = false;
         PlayerStats* player_stats;
         RenderStats* render_stats;
         Attack* attack;
-        std::string state;
+        std::string state = "playing";
+        std::string area;
         Level* level;
         int level_number;
         std::vector<std::vector<int>> walls;
         std::unordered_map<int, Enemy*> enemies;
+        std::vector<DisplayStats*> menu_displays;
+        std::vector<ButtonStats*> menu_buttons;
         Boss *boss = nullptr;
         std::unordered_map<int, std::vector<Projectile*>> projectiles;
 
@@ -49,7 +56,7 @@ class GameState {
 
             // render variables
             chunk_size = 50;
-            hitbox_radius = 20;
+            hitbox_radius = 30;
             render_stats =  new RenderStats(
                 arg_player_render,
                 arg_shift,
@@ -58,7 +65,7 @@ class GameState {
 
             // level
             level_number = 0;
-            level = &Levels[level_number];
+            level = &levels[level_number];
             load_level();
 
             enemy_range = 6; // in chunks
@@ -66,24 +73,31 @@ class GameState {
             // player stats
             player_stats = new PlayerStats();
             attack = new Attack(
-                player_stats->attack_time / 3,
-                2 * player_stats->attack_time / 3,
+                player_stats->attack_time,
                 player_stats->range,
                 player_stats->cone_angle,
                 hitbox_radius
             );
             invulnerability_frame = -1;
             invulnerability_time = 20;
+
+            // stats menu
+            init_stats_menu();
         }
         
         void run_frame(const int cx, const int cy) {
+            pointer_x = cx;
+            pointer_y = cy;
+            if (pause) return;
+
             move();
-            player_attack(cx, cy);
-            if (state == "enemy") {
+            player_attack();
+            player_stats->run_frame();
+            if (area == "enemy") {
                 enemy_attack();
                 run_enemies_frame();
             }
-            else if (state == "boss") {
+            else if (area == "boss") {
                 run_boss_frame();
             }
             update_projectiles(projectiles);
@@ -98,6 +112,22 @@ class GameState {
                 case 'A': left = true;  break;
                 case 'S': down = true;  break;
                 case 'D': right = true; break;
+                case 'P': {
+                    if (pause) pause = false;
+                    else pause = true;
+                    break;
+                }
+                case 'C': {
+                    if (state == "menu_stats") {
+                        pause = false;
+                        state = "playing";
+                    }
+                    else {
+                        pause = true;
+                        state = "menu_stats";
+                    }
+                    break;
+                }
             }
         }
 
@@ -113,6 +143,31 @@ class GameState {
 
         void on_lbuttondown() {
             lbutton = true;
+
+            // check clicking on buttons
+            if (state == "menu_stats") {
+                for (ButtonStats *button : menu_buttons) {
+                    if (
+                        button->render_top <= pointer_x &&
+                        button->render_bottom >= pointer_x &&
+                        button->render_left <= pointer_y &&
+                        button->render_right >= pointer_y
+                    ) {
+                        // clicked on the button
+                        player_stats->update_stat(button->stat, button->increase);
+
+                        // update button show/hide state
+                        if (button->increase) {
+                            button->hide = !player_stats->can_increase(button->stat);
+                            button->opposite->hide = !player_stats->can_decrease(button->stat);
+                        }
+                        else {
+                            button->hide = !player_stats->can_decrease(button->stat);
+                            button->opposite->hide = !player_stats->can_increase(button->stat);
+                        }
+                    }
+                }
+            }
         }
 
         void on_lbuttonup() {
@@ -122,6 +177,7 @@ class GameState {
         void end_game() {
             clear_enemies();
             clear_projectiles();
+            clear_stats_menu(); // Delete menus before player stats
             delete player_stats;
             delete render_stats;
             delete attack;
@@ -135,7 +191,7 @@ class GameState {
             clear_enemies();
             clear_projectiles();
             walls.clear();
-            state = level->type;
+            area = level->area_type;
 
             std::cout << "Loading level: " << level->name << "\n";
 
@@ -166,6 +222,7 @@ class GameState {
                     // Boss
                     else if (row[j] == 5) {
                         boss = new Boss(i * chunk_size + chunk_size / 2, j * chunk_size + chunk_size / 2);
+                        render_stats->render_portal = false;
                         row[j] = 0;
                     }
                 }
@@ -175,7 +232,7 @@ class GameState {
 
         void move() {
             // target movement
-            int diag_coef = (right != left && down != up) ? 10 : 14; 
+            int diag_coef = (right != left && down != up) ? 10 : 15; 
             int dx = (down - up) * player_stats->speed * diag_coef / 10;
             int dy = (right - left) * player_stats->speed * diag_coef / 10;
 
@@ -196,7 +253,7 @@ class GameState {
                 new_y = chunk_size * j + render_stats->half_player_width;
             }
             // right
-            if (is_wall(i, j+1) == 1 && new_y % chunk_size > (chunk_size - render_stats->half_player_width)) {
+            else if (is_wall(i, j+1) == 1 && new_y % chunk_size > (chunk_size - render_stats->half_player_width)) {
                 new_y = chunk_size * (j+1) - render_stats->half_player_width;
             }
             // up
@@ -204,7 +261,7 @@ class GameState {
                 new_x = chunk_size * i + render_stats->half_player_height;
             }
             // down
-            if (is_wall(i+1, j) == 1 && new_x % chunk_size > (chunk_size - render_stats->half_player_height)) {
+            else if (is_wall(i+1, j) == 1 && new_x % chunk_size > (chunk_size - render_stats->half_player_height)) {
                 new_x = chunk_size * (i+1) - render_stats->half_player_height;
             }
             // up left
@@ -219,6 +276,17 @@ class GameState {
                 }
                 else new_x = chunk_size * i + render_stats->half_player_height;
             }
+            // down right
+            else if (
+                is_wall(i+1, j+1) == 1 &&
+                new_y % chunk_size > (chunk_size - render_stats->half_player_width) &&
+                new_x % chunk_size > (chunk_size - render_stats->half_player_height)
+            ) {
+                if (new_y % chunk_size - chunk_size + render_stats->half_player_width < new_x % chunk_size - chunk_size + render_stats->half_player_height) {
+                    new_y = chunk_size * (j+1) - render_stats->half_player_width;
+                }
+                else new_x = chunk_size * (i+1) - render_stats->half_player_height;
+            }
             // up right
             if (
                 is_wall(i-1, j+1) == 1 &&
@@ -230,19 +298,8 @@ class GameState {
                 }
                 else new_x = chunk_size * i + render_stats->half_player_height;
             }
-            // down right
-            if (
-                is_wall(i+1, j+1) == 1 &&
-                new_y % chunk_size > (chunk_size - render_stats->half_player_width) &&
-                new_x % chunk_size > (chunk_size - render_stats->half_player_height)
-            ) {
-                if (new_y % chunk_size - chunk_size + render_stats->half_player_width < new_x % chunk_size - chunk_size + render_stats->half_player_height) {
-                    new_y = chunk_size * (j+1) - render_stats->half_player_width;
-                }
-                else new_x = chunk_size * (i+1) - render_stats->half_player_height;
-            }
             // down left
-            if (
+            else if (
                 is_wall(i+1, j-1) == 1 &&
                 new_y % chunk_size < render_stats->half_player_width &&
                 new_x % chunk_size > (chunk_size - render_stats->half_player_height)
@@ -262,26 +319,34 @@ class GameState {
             current_chunk_j = player_y / chunk_size;
 
             // Check if entering portal
-            if (walls[current_chunk_i][current_chunk_j] == 3) {
+            if (
+                !boss &&
+                walls[current_chunk_i][current_chunk_j] == 3
+            ) {
                 level_number = level->next_level_number;
-                level = &Levels[level_number];
+                if (level_number < levels.size()) level = &levels[level_number];
                 load_level();
             }
         }
 
-        void player_attack(const int& cx, const int& cy) {
+        void player_attack() {
             // Update current attack frame
             attack->run_frame();
 
             // Check for new attack
-            if (attack->available() && lbutton && (cx != render_stats->center_x || cy != render_stats->center_y)) {
-                float angle = std::atan2(cx - render_stats->center_x, cy - render_stats->center_y);
+            if (attack->available() && lbutton && (pointer_x != render_stats->center_x || pointer_y != render_stats->center_y)) {
+                // Update attack stats
+                attack->update_range(player_stats->range);
+                attack->update_cone_angle(player_stats->cone_angle);
+                attack->update_attack_time(player_stats->attack_time);
+                // Start new attack
+                float angle = std::atan2(pointer_x - render_stats->center_x, pointer_y - render_stats->center_y);
                 attack->start(angle);
             }
 
             // Check enemy collision
             if (attack->attacking) {
-                if (state == "enemy") {
+                if (area == "enemy") {
                     // Find enemies on attack line
                     const std::vector<int> keys = enemies_on_line(
                         player_x + attack->xbeg,
@@ -302,14 +367,15 @@ class GameState {
                         // Otherwise hit enemy
                         attack->hit_enemy(key);
                         Enemy *enemy = enemies[key];
-                        bool dead = enemy->take_damage(player_stats->hit_damage);
+                        bool dead = enemy->take_damage(player_stats->attack_damage);
                         if (dead) {
                             enemy_death(key);
                         }
                     }
                 }
                 else if (
-                    state == "boss" &&
+                    area == "boss" &&
+                    boss &&
                     !attack->boss_is_hit &&
                     line_through_rect(
                         player_x + attack->xbeg,
@@ -323,7 +389,7 @@ class GameState {
                     )
                 ) {
                     attack->hit_boss();
-                    bool dead = boss->take_damage(player_stats->hit_damage);
+                    bool dead = boss->take_damage(player_stats->attack_damage);
                     if (dead) {
                         boss_death();
                     }
@@ -379,6 +445,7 @@ class GameState {
                 std::cout << "Warning : trying to delete unexisting enemy\n";
                 return;
             }
+            player_stats->gain_experience(enemies[key]->experience);
             int chunk_i = key / max_chunks_j;
             int chunk_j = key % max_chunks_j;
             walls[chunk_i][chunk_j] = 0;
@@ -387,8 +454,12 @@ class GameState {
         }
 
         void boss_death() {
+            if (!boss) return;
+
+            player_stats->gain_experience(boss->experience);
             delete boss;
             boss = nullptr;
+            render_stats->render_portal = true;
         }
 
         void update_invulnerability_frame() {
@@ -398,9 +469,10 @@ class GameState {
 
         void take_damage() {
             // Check invulnerability
-            if (invulnerability_frame >= 0 || invulnerable) return;
+            if (invulnerability_frame >= 0 || player_stats->invulnerable) return;
+
             // Check projectile collision in adjacent chunks
-            bool taking_damage = false;
+            int damage = 0;
             for (int i = (std::max)(0, current_chunk_i - 1); i < (std::min)(max_chunks_i , current_chunk_i + 1); i++) {
                 for (int j = (std::max)(0, current_chunk_j - 1); j < (std::min)(max_chunks_j , current_chunk_j + 1); j++) {
                     const int key = i * max_chunks_j + j;
@@ -409,17 +481,18 @@ class GameState {
                         Projectile* proj = projectiles[key][ind];
                         int limit_dist = hitbox_radius + proj->radius;
                         if (distance_squared(player_x, player_y, proj->x, proj->y) < limit_dist * limit_dist) {
-                            taking_damage = true;
+                            // register largest hit
+                            damage = (std::max)(damage, proj->damage);
                             delete_projectile(key,ind);
                         }
                     }
                 }
             }
             // Take damage
-            if (taking_damage) {
-                player_stats->life --;
+            if (damage > 0) {
+                bool dead = player_stats->take_damage(damage);
                 invulnerability_frame = 0;
-                if (player_stats->life == 0) state = "dead";
+                if (dead) state = "dead";
             }
         }
 
@@ -531,8 +604,16 @@ class GameState {
             int end_i = xend / chunk_size;
             int end_j = yend / chunk_size;
             std::vector<int> res;
-            for (int i = (std::min)(start_i, end_i); i <= (std::max)(start_i, end_i); i++) {
-                for (int j = (std::min)(start_j, end_j); j <= (std::max)(start_j, end_j); j++) {
+            for (
+                int i = (std::max)(0, (std::min)(start_i, end_i));
+                i <= (std::min)(max_chunks_i - 1, (std::max)(start_i, end_i));
+                i++
+            ) {
+                for (
+                    int j = (std::max)(0, (std::min)(start_j, end_j));
+                    j <= (std::min)(max_chunks_j - 1, (std::max)(start_j, end_j));
+                    j++
+                ) {
                     // Check if enemy at chunk i, j and if line goes through it
                     if (walls[i][j] == 4 && line_through_chunk(xbeg, ybeg, xend, yend, i, j)) {
                         int key = i * max_chunks_j + j;
@@ -559,6 +640,82 @@ class GameState {
                 projectiles[key].clear();
             }
             projectiles.clear();
+        }
+
+        void init_stats_menu() {
+            
+            std::vector<std::pair<std::wstring, char>> left_stats = {
+                {L"Attack damage : ",'D'},
+                {L"Attack speed : ",'S'},
+                {L"Attack range : ",'R'},
+                {L"Increase attack angle : ",'C'},
+                {L"Decrease attack angle : ",'c'}
+            };
+
+            std::vector<std::pair<std::wstring, char>> right_stats = {
+                {L"Maximum life : ",'L'},
+                {L"Life regeneration : ",'l'},
+                {L"Movement speed : ",'s'}
+            };
+
+            // Left window stats
+            int current_display_ymin = render_stats->left_stats_ymin + render_stats->stats_picture_width + render_stats->stats_y_margin;
+            int current_display_ymax = current_display_ymin + render_stats->stat_display_width;
+            int current_button_decrease_ymin = current_display_ymax + render_stats->stats_y_margin;
+            int current_button_decrease_ymax = current_button_decrease_ymin + render_stats->stat_button_width;
+            int current_button_increase_ymin = current_button_decrease_ymax + render_stats->stats_y_margin;
+            int current_button_increase_ymax = current_button_increase_ymin + render_stats->stat_button_width;
+            int current_xmin = render_stats->stats_xmin + render_stats->stats_initial_x_margin;
+            int current_xmax = current_xmin + render_stats->text_height;
+
+            for (const auto& [text, stat] : left_stats) {
+                // Create display & buttons
+                menu_displays.push_back(new DisplayStats(current_xmin, current_display_ymin, current_xmax, current_display_ymax, text, typeid(int), &player_stats->allocated_points[stat]));
+                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_decrease_ymin, current_xmax, current_button_decrease_ymax, false, stat, true));
+                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_increase_ymin, current_xmax, current_button_increase_ymax, true, stat));
+                // set opposite buttons
+                int n = menu_buttons.size();
+                menu_buttons[n-1]->opposite = menu_buttons[n-2];
+                menu_buttons[n-2]->opposite = menu_buttons[n-1];
+                // update x values
+                current_xmin = current_xmax + render_stats->stats_x_margin;
+                current_xmax = current_xmin + render_stats->text_height;
+            }
+
+            // Right window stats
+            current_display_ymin = render_stats->right_stats_ymin + render_stats->stats_picture_width + render_stats->stats_y_margin;
+            current_display_ymax = current_display_ymin + render_stats->stat_display_width;
+            current_button_decrease_ymin = current_display_ymax + render_stats->stats_y_margin;
+            current_button_decrease_ymax = current_button_decrease_ymin + render_stats->stat_button_width;
+            current_button_increase_ymin = current_button_decrease_ymax + render_stats->stats_y_margin;
+            current_button_increase_ymax = current_button_increase_ymin + render_stats->stat_button_width;
+            current_xmin = render_stats->stats_xmin + render_stats->stats_initial_x_margin;
+            current_xmax = current_xmin + render_stats->text_height;
+
+            for (const auto& [text, stat] : right_stats) {
+                // Create display & buttons
+                menu_displays.push_back(new DisplayStats(current_xmin, current_display_ymin, current_xmax, current_display_ymax, text, typeid(int), &player_stats->allocated_points[stat]));
+                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_decrease_ymin, current_xmax, current_button_decrease_ymax, false, stat, true));
+                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_increase_ymin, current_xmax, current_button_increase_ymax, true, stat));
+                // set opposite buttons
+                int n = menu_buttons.size();
+                menu_buttons[n-1]->opposite = menu_buttons[n-2];
+                menu_buttons[n-2]->opposite = menu_buttons[n-1];
+                // update x values
+                current_xmin = current_xmax + render_stats->stats_x_margin;
+                current_xmax = current_xmin + render_stats->text_height;
+            }
+        }
+
+        void clear_stats_menu() {
+            for (int i = 0; i < menu_displays.size(); i++) {
+                delete menu_displays[i];
+            }
+            menu_displays.clear();
+            for (int i = 0; i < menu_buttons.size(); i++) {
+                delete menu_displays[i];
+            }
+            menu_buttons.clear();
         }
 };
 

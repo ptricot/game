@@ -149,60 +149,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         PAINTSTRUCT ps;
         BeginPaint(hwnd, &ps);
 
-        renderer.render_begin();
-        if (gameState.state != "dead") {
-            renderer.render_walls(
-                gameState.walls,
-                gameState.render_stats,
-                gameState.player_x,
-                gameState.player_y,
-                gameState.current_chunk_i,
-                gameState.current_chunk_j,
-                gameState.chunk_size
-            );
-            renderer.render_player(
-                gameState.render_stats
-            );
-            renderer.render_boss(
-                gameState.render_stats,
-                gameState.player_x,
-                gameState.player_y,
-                gameState.boss
-            );
-            renderer.render_projectiles(
-                gameState.render_stats,
-                gameState.player_x,
-                gameState.player_y,
-                gameState.projectiles,
-                gameState.current_chunk_i,
-                gameState.current_chunk_j,
-                gameState.max_chunks_i,
-                gameState.max_chunks_j
-            );
-            renderer.render_attack(
-                gameState.render_stats,
-                gameState.attack
-            );
-            renderer.render_taking_damage(
-                gameState.render_stats,
-                gameState.invulnerability_frame
-            );
-            renderer.render_boss_life(
-                gameState.render_stats,
-                gameState.boss
-            );
-            renderer.render_stats(
-                gameState.player_stats->life,
-                gameState.player_stats->max_life
-            );
-        }
-        else if (gameState.state == "dead") {
-            renderer.render_dead(
-                gameState.render_stats
-            );
-        }
-        
-        renderer.render_end();
+        renderer.render(&gameState);
 
         EndPaint(hwnd, &ps);
 

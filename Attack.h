@@ -19,11 +19,13 @@ class Attack {
         int ybeg = 0;
         int xend = 0;
         int yend = 0;
-        bool boss_is_hit;
+        bool boss_is_hit = false;
         std::unordered_set<int> hit_enemies_keys;
 
-        Attack(int attack_frames, int wait_frames, int range, float cone_angle, int min_range = 30) :
-            attack_frames(attack_frames), wait_frames(wait_frames), range(range), cone_angle(cone_angle), min_range(min_range) {}
+        Attack(int attack_time, int range, float cone_angle, int min_range) :
+            range(range), cone_angle(cone_angle), min_range(min_range) {
+                update_attack_time(attack_time);
+            }
 
         bool available() {
             return !attacking && !waiting;
@@ -39,6 +41,24 @@ class Attack {
 
         void hit_boss() {
             boss_is_hit = true;
+        }
+
+        void update_range(int new_range) {
+            range = new_range;
+        }
+
+        void update_cone_angle(float new_cone_angle) {
+            cone_angle = new_cone_angle;
+        }
+
+        void update_attack_time(int attack_time) {
+            // the faster the attack, the less we wait
+            // at attack time of 60 frames or more, 30% attacking and 70% waiting
+            // at attack time of 15 frames or less, 100% attacking
+            // linear between 15 and 60 frames
+            int ratio = (std::max)(30, (std::min)(100, (int)(120 - 1.5f * attack_time)));
+            attack_frames = ratio * attack_time / 100;
+            wait_frames = (100 - ratio) * attack_time / 100;
         }
 
         void start(float arg_angle) {
