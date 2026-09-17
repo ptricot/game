@@ -545,11 +545,11 @@ class Renderer {
             const RenderStats* render_stats
         ) {
             brush->SetColor(colors.stats);
-            std::wstring text = L"DEAD";
+            std::wstring text = L"You are dead. Press R to retry";
 
             D2D1_RECT_F textRect = D2D1::RectF(
-                render_stats->center_y - 30.0f, render_stats->center_x - 5.0f,
-                render_stats->center_y + 30.0f, render_stats->center_x + 5.0f
+                render_stats->center_y - 100.0f, render_stats->center_x - 5.0f,
+                render_stats->center_y + 100.0f, render_stats->center_x + 5.0f
             );
 
             pRenderTarget->DrawText(

@@ -66,22 +66,26 @@ class PlayerStats {
             cone_angle(cone_angle),
             default_cone_angle(cone_angle) {}
 
-        void gain_experience(int value) {
+        bool gain_experience(int value) {
 
-            if (max_level) return;
+            if (max_level) return false;
 
             experience += value;
+            bool level_up = false;
 
             while (experience >= required_experience[level]) {
                 // level up
                 experience -= required_experience[level];
                 level ++;
                 available_points++;
+                level_up = true;
                 if (level == required_experience.size()) {
                     max_level = true;
                     experience = 0;
                 }
             }
+
+            return level_up;
         }
 
         void run_frame() {
@@ -103,7 +107,7 @@ class PlayerStats {
         }
 
         bool can_increase(char stat) {
-            return allocated_points[stat] < maximum_points[stat];
+            return allocated_points[stat] < maximum_points[stat] && available_points > 0;
         }
 
         bool can_decrease(char stat) {

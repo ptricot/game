@@ -42,7 +42,7 @@ class GameState {
         int current_chunk_i;
         int current_chunk_j;
         int chunk_size; // in pixels
-        int enemy_range;
+        int enemy_range = 6;
         bool pause = false;
         PlayerStats* player_stats;
         RenderStats* render_stats;
@@ -77,27 +77,6 @@ class GameState {
                 chunk_size
             );
 
-            // level
-            level_number = 0;
-            level = &levels[level_number];
-            load_level();
-
-            enemy_range = 6; // in chunks
-
-            // player stats
-            player_stats = new PlayerStats();
-            attack = new Attack(
-                player_stats->attack_time,
-                player_stats->range,
-                player_stats->cone_angle,
-                hitbox_radius
-            );
-            invulnerability_frame = -1;
-            invulnerability_time = 20;
-
-            // stats menu
-            init_stats_menu();
-
             // threads
             for (int i = 0; i < 4; i++) {
                 workers.emplace_back([this] {
@@ -118,6 +97,34 @@ class GameState {
                     }
                 });
             }
+
+            // start
+            start_game();
+        }
+
+        void start_game() {
+            // level
+            level_number = 0;
+            level = &levels[level_number];
+            load_level();
+
+            state = "playing";
+
+            // player stats
+            player_stats = new PlayerStats();
+            attack = new Attack(
+                player_stats->attack_time,
+                player_stats->range,
+                player_stats->cone_angle,
+                hitbox_radius
+            );
+            invulnerability_frame = -1;
+            invulnerability_time = 20;
+
+            // stats menu
+            clear_stats_menu();
+            init_stats_menu();
+            update_buttons();
         }
         
         void run_frame(const int cx, const int cy) {
@@ -163,6 +170,11 @@ class GameState {
                     }
                     break;
                 }
+                case 'R': {
+                    if (state == "dead") {
+                        start_game();
+                    }
+                }
             }
         }
 
@@ -191,15 +203,11 @@ class GameState {
                         // clicked on the button
                         player_stats->update_stat(button->stat, button->increase);
 
-                        // update button show/hide state
-                        if (button->increase) {
-                            button->hide = !player_stats->can_increase(button->stat);
-                            button->opposite->hide = !player_stats->can_decrease(button->stat);
-                        }
-                        else {
-                            button->hide = !player_stats->can_decrease(button->stat);
-                            button->opposite->hide = !player_stats->can_increase(button->stat);
-                        }
+                        // update all buttons show / hide
+                        update_buttons();
+
+                        // exit
+                        break;
                     }
                 }
             }
@@ -480,7 +488,12 @@ class GameState {
                 std::cout << "Warning : trying to delete unexisting enemy\n";
                 return;
             }
-            player_stats->gain_experience(enemies[key]->experience);
+            bool level_up = player_stats->gain_experience(enemies[key]->experience);
+            if (level_up) {
+                update_buttons();
+            }
+
+            // remove enemy from wall grid
             int chunk_i = key / max_chunks_j;
             int chunk_j = key % max_chunks_j;
             walls[chunk_i][chunk_j] = 0;
@@ -491,10 +504,23 @@ class GameState {
         void boss_death() {
             if (!boss) return;
 
-            player_stats->gain_experience(boss->experience);
+            bool level_up = player_stats->gain_experience(boss->experience);
+            if (level_up) {
+                update_buttons();
+            }
             delete boss;
             boss = nullptr;
             render_stats->render_portal = true;
+        }
+
+
+        void update_buttons() {
+            for (ButtonStats *button : menu_buttons) {
+                // update button show/hide state
+                button->hide = button->increase
+                    ? !player_stats->can_increase(button->stat)
+                    : !player_stats->can_decrease(button->stat);
+            }
         }
 
         void update_invulnerability_frame() {
@@ -758,7 +784,7 @@ class GameState {
                 // Create display & buttons
                 menu_displays.push_back(new DisplayStats(current_xmin, current_display_ymin, current_xmax, current_display_ymax, text, typeid(int), &player_stats->allocated_points[stat]));
                 menu_buttons.push_back(new ButtonStats(current_xmin, current_button_decrease_ymin, current_xmax, current_button_decrease_ymax, false, stat, true));
-                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_increase_ymin, current_xmax, current_button_increase_ymax, true, stat));
+                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_increase_ymin, current_xmax, current_button_increase_ymax, true, stat, true));
                 // set opposite buttons
                 int n = menu_buttons.size();
                 menu_buttons[n-1]->opposite = menu_buttons[n-2];
@@ -782,7 +808,7 @@ class GameState {
                 // Create display & buttons
                 menu_displays.push_back(new DisplayStats(current_xmin, current_display_ymin, current_xmax, current_display_ymax, text, typeid(int), &player_stats->allocated_points[stat]));
                 menu_buttons.push_back(new ButtonStats(current_xmin, current_button_decrease_ymin, current_xmax, current_button_decrease_ymax, false, stat, true));
-                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_increase_ymin, current_xmax, current_button_increase_ymax, true, stat));
+                menu_buttons.push_back(new ButtonStats(current_xmin, current_button_increase_ymin, current_xmax, current_button_increase_ymax, true, stat, true));
                 // set opposite buttons
                 int n = menu_buttons.size();
                 menu_buttons[n-1]->opposite = menu_buttons[n-2];
@@ -799,7 +825,7 @@ class GameState {
             }
             menu_displays.clear();
             for (int i = 0; i < menu_buttons.size(); i++) {
-                delete menu_displays[i];
+                delete menu_buttons[i];
             }
             menu_buttons.clear();
         }
