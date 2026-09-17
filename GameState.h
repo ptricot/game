@@ -9,6 +9,12 @@
 #include <algorithm>
 #include <cmath>
 #include <typeinfo>
+#include <thread>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <functional>
 
 #include "GameData.h"
 #include "Projectile.h"
@@ -51,6 +57,14 @@ class GameState {
         std::vector<ButtonStats*> menu_buttons;
         Boss *boss = nullptr;
         std::unordered_map<int, std::vector<Projectile*>> projectiles;
+        std::vector<std::thread> workers;
+        std::queue<std::function<void()>> tasks;
+        std::mutex task_mutex; // Protects tasks
+        std::mutex moved_projectiles_mutex; // Protects moved_projectiles
+        std::mutex tasks_done_mutex;    // Protects active_tasks
+        std::condition_variable task_cv;
+        std::condition_variable tasks_done_cv;
+        std::atomic<int> active_tasks = 0;
 
         void init(const std::vector<int>& arg_player_render, const std::vector<int>& arg_shift) {
 
@@ -83,6 +97,27 @@ class GameState {
 
             // stats menu
             init_stats_menu();
+
+            // threads
+            for (int i = 0; i < 4; i++) {
+                workers.emplace_back([this] {
+                    while (true) {
+                        std::function<void()> task;
+
+                        {
+                            std::unique_lock lock(task_mutex);
+                            task_cv.wait(lock, [this] {
+                                return !tasks.empty();
+                            });
+
+                            task = std::move(tasks.front());
+                            tasks.pop();
+                        }
+
+                        task();
+                    }
+                });
+            }
         }
         
         void run_frame(const int cx, const int cy) {
@@ -92,7 +127,7 @@ class GameState {
 
             move();
             player_attack();
-            player_stats->run_frame();
+            player_stats->run_frame(); // for life regen
             if (area == "enemy") {
                 enemy_attack();
                 run_enemies_frame();
@@ -100,7 +135,7 @@ class GameState {
             else if (area == "boss") {
                 run_boss_frame();
             }
-            update_projectiles(projectiles);
+            update_projectiles();
             update_invulnerability_frame();
             take_damage();
         }
@@ -496,43 +531,94 @@ class GameState {
             }
         }
 
-        void update_projectiles(std::unordered_map<int, std::vector<Projectile*>>& projectiles_map) {
+        void update_projectiles() {
+
             // Keep track of projectiles changing chunks
             std::vector<std::pair<int, Projectile*>> moved_projectiles;
+
             // Go through all projectiles
-            for (const auto& [key, _] : projectiles_map) {
-                for (int i = 0; i < projectiles_map[key].size(); i++) {
-                    Projectile *proj = projectiles_map[key][i];
-                    // Compute and update new position
-                    proj->run_frame();
+            // Multithread
+            {
+                std::lock_guard lock(task_mutex);
 
-                    // Compute old and new chunk
-                    int chunk_i = key / max_chunks_j;
-                    int chunk_j = key % max_chunks_j;
-                    int new_chunk_i = (int)proj->x / chunk_size;
-                    int new_chunk_j = (int)proj->y / chunk_size;
+                for (const auto& [key, _] : projectiles) {
+                    active_tasks++;
 
-                    // Delete projectile when out of bounds
-                    if (new_chunk_i < 0 || new_chunk_i >= max_chunks_i || new_chunk_j < 0 || new_chunk_j >= max_chunks_j) {
-                        delete_projectile(key,i);
-                        i--;
-                    }
-                    // Change chunk if necessary
-                    else if (new_chunk_i != chunk_i || new_chunk_j != chunk_j ) {
-                        int new_key = new_chunk_i * max_chunks_j + new_chunk_j;
-                        // remove from old chunk
-                        int n = projectiles_map[key].size();
-                        std::swap(projectiles_map[key][i], projectiles_map[key][n-1]);
-                        projectiles_map[key].pop_back();
-                        i--;
-                        // add to new chunk
+                    tasks.push([this, key, &moved_projectiles] {
+                        try {
+                            update_projectiles_on_chunk(key, moved_projectiles);
+                        }
+                        catch(const std::exception& e) {
+                            std::cout << e.what() << '\n';
+                        }
+                        {
+                            std::lock_guard lock(tasks_done_mutex);
+                            --active_tasks;
+                        }
+                        tasks_done_cv.notify_one();
+                    });
+                }
+            }
+
+            // Start threads
+            task_cv.notify_all();
+
+            // Wait for threads to finish
+            {
+                std::unique_lock lock(tasks_done_mutex);
+                tasks_done_cv.wait(lock, [this] {
+                    return active_tasks.load() == 0;
+                });
+            }
+
+            // Add moved projectiles back
+            for (const auto& [key, proj] : moved_projectiles) {
+                projectiles[key].push_back(proj);
+            }
+
+            // Clear empty chunks in projectiles
+            for (auto it = projectiles.begin(); it != projectiles.end(); ) {
+                if (it->second.empty()) {
+                    it = projectiles.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        void update_projectiles_on_chunk(int key, std::vector<std::pair<int, Projectile*>>& moved_projectiles) {
+            for (int i = 0; i < projectiles[key].size(); i++) {
+                Projectile *proj = projectiles[key][i];
+                // Compute and update new position
+                proj->run_frame();
+
+                // Compute old and new chunk
+                int chunk_i = key / max_chunks_j;
+                int chunk_j = key % max_chunks_j;
+                int new_chunk_i = (int)proj->x / chunk_size;
+                int new_chunk_j = (int)proj->y / chunk_size;
+
+                // Delete projectile when out of bounds
+                if (new_chunk_i < 0 || new_chunk_i >= max_chunks_i || new_chunk_j < 0 || new_chunk_j >= max_chunks_j) {
+                    delete_projectile(key,i);
+                    i--;
+                }
+                // Change chunk if necessary
+                else if (new_chunk_i != chunk_i || new_chunk_j != chunk_j ) {
+                    int new_key = new_chunk_i * max_chunks_j + new_chunk_j;
+
+                    // remove from old chunk
+                    int n = projectiles[key].size();
+                    std::swap(projectiles[key][i], projectiles[key][n-1]);
+                    projectiles[key].pop_back();
+                    i--;
+
+                    // add to new chunk
+                    {
+                        std::lock_guard lock(moved_projectiles_mutex);
                         moved_projectiles.push_back({new_key, proj});
                     }
                 }
-            }
-            // Add moved projectiles back
-            for (const auto& [key, proj] : moved_projectiles) {
-                projectiles_map[key].push_back(proj);
             }
         }
 
